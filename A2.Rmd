@@ -1,0 +1,75 @@
+---
+title: "Exercise A-2"
+author: "Pablo Vidal Fernández"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+urlcolor: magenta
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+```
+
+```{r, echo = F}
+require(tidyverse)
+require(knitr)
+require(kableExtra)
+require(xtable)
+require(papeR)
+```
+
+
+**Exercise A.2.** For the [challenger.txt](https://www.youtube.com/watch?v=dQw4w9WgXcQ) dataset, do the following:
+
+a.    Do a Poisson regression of the total number of incidents, *nfails.field* + *nfails.nozzle*, on *temp*.
+Interpret the regression. Are the effects of temp significant with $\alpha = 0.01$?
+
+We have to define our dependent variable as the sum of the two indicated variables. Then, we can do the regression:
+
+```{r}
+data <- read.table("challenger.txt", header = T)
+data$total_fails <- data$nfails.field + data$nfails.nozzle
+fit <- glm(total_fails ~ temp, family = poisson, data = data)
+kable(prettify(summary(fit)))
+```
+
+The interpretations of the coefficients are the following:
+
+-   $e^{\hat{\beta}_0} = e^{2.943} = 18.91$ is the expected number of total fails when *temp* is equal to 0.
+-   $e^{\hat{\beta}_1} = e^{-0.143} = 0.866$ is the the factor by which the expected number of total fails is going to be decreased when there is an unit change in *temp* (13.4% reduction).
+
+We can see that the effects of *temp* are significant with $\alpha = 0.01$, as the p-value is smaller and thus we can reject the null hypothesis of the coefficient being equal to 0.
+
+b.    Plot the data and the fitted Poisson regression curve.
+
+We create of sequence of 100 points evenly distributed between the minimum and the maximum observations of *temp*, and predict the expected number of total fails for each of them.
+
+```{r}
+x <- data$temp
+y <- data$total_fails
+
+plot(x, y, main = "Total fails vs temp", xlab = "Temp",
+     ylab = "Total fails", pch = 16)
+
+pred <- predict(fit, data.frame(temp = seq(min(x), max(x), 
+                   length.out = 100)), type = "response")
+
+lines(seq(min(x), max(x), length.out = 100), pred, col = 2, lwd = 2)
+```
+
+c.    Predict the expected number of incidents at temperatures -0.6 and 11.67.
+
+The exercise asks for the expected number of incidents, so we will have to specify *type = response*. If we didn't specify it, the default argument *link* would give us $\hat{\eta}$, and we are interested in $e^{\hat{\eta}}$. 
+
+```{r}
+new_x <- data.frame(temp = c(-0.6, 11.67))
+prediction <- predict(fit, new_x, type = "response")
+
+df_pred <- cbind(new_x, prediction)
+kable(df_pred)
+```
+
+We feel obligated to mention that the minimum observation for *temp* is 11.7 While the prediction for *temp* = 11.67 could be fine, as it is very close to observed data, we cannot be sure about the prediction for *temp* = -0.6. The model has not been trained on data with observations even near that temperature.
