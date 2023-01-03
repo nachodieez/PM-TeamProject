@@ -1,0 +1,38 @@
+---
+title: "Exercise C for Predictive Modeling"
+author:
+  - Pablo Vidal Fernández	  100483812
+  - José Ignacio Díez Ruiz	100487766
+  - Carlos Roldán Piñero	  100484904
+output: pdf_document
+date: "`r Sys.Date()`"
+header-includes:
+  - \renewcommand{\and}{\\}
+---
+
+## Introduction
+
+In the search of a dataset of true interest for ourselves, we were
+sadly met with failure.
+After exhaustive indagations in public repositories, we were
+not able to find a suitable one.
+We did, nonetheless, stumbled upon intriguing datasets,
+which, unfortunately, were time series.
+
+As such, and although it was against our primary desire,
+we ended up using the [mysterious.RData](https://github.com/egarpor/handy/blob/master/datasets/mysterious.RData?raw=true).
+This, presented some challenges, which will be explored
+on the next section, which made it certainly more appealing
+than the majority of exploited online datasets.
+
+Let us detail briefly the contents of the selected data.
+It is comprised of one binary prediction variable `y` and
+903 predictors, seggregated by numericals, 893 of them, and
+categoricals, the remaining 10.
+It has 224 observations, which already tells us that we will
+need to consider dimensional reduction techniques.
+It has some NaNs present in it, a total of 81 values
+spanning 26 rows.
+On the next section we will detail our analysis process
+and buildup of the prediction model.
+

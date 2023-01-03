@@ -1,0 +1,139 @@
+---
+title: "Problem Sets for Predictive Modeling"
+author:
+  - Pablo Vidal Fernández	  100483812
+  - José Ignacio Díez Ruiz	100487766
+  - Carlos Roldán Piñero	  100484904
+output: pdf_document
+date: "`r Sys.Date()`"
+header-includes:
+  - \renewcommand{\and}{\\}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, fig.dim = c(8,4))
+
+require(MASS)
+require(ggplot2)
+```
+
+## Exercise B.6
+
+We are asked to replicate
+[Figure 3.5 from the course notes](https://bookdown.org/egarpor/PM-UC3M/images/R/cv-shao.png)
+but with some modifications: 10 predictors instead of 5, and only considering
+AIC and BIC, no LOOCV.
+Let us detail the followed steps.
+
+First, we define a function to generate a data frame with our response variable
+and features.
+This are generated as follows.
+$X$ is a $n\times p$ matrix (with $n$ the number of observations) filled with
+normally distributed random numbers $\sim \mathcal{N}(0,1)$.
+Then, $\beta = (\beta_0, \vec{\beta})^T$ a $(p+1)$-element vector with values
+$\beta_0 = 0.5$, $\beta_1 = \beta_2 = 1$, $\beta_{i>2} = 0$.
+Finally, the response variable is computed,
+\begin{equation}
+  Y = X\vec{\beta} + \vec{\varepsilon} + \beta_0 \begin{pmatrix}1\\\vdots\\1\end{pmatrix} \;,
+\end{equation}
+with $\vec{\varepsilon}$ a $p$-element vector $\sim \mathcal{N}(0,1)$ of noise.
+
+```{r}
+genData <- function(n, p){
+  X <- matrix(rnorm(n*p), nrow = n, ncol = p)
+  B <- c(1, 1, rep(0, p-2))
+  E <- rnorm(n)
+  Y <- drop(X %*% B) + E + 0.5
+  return(data.frame(y = Y, x = X))
+}
+```
+
+Now we define the function for the Monte Carlo estimation of the probability.
+The idea is to generate the data, perform a bidirectional step AIC and BIC
+on the model and record whether it did predict the only non-null predictors
+to be the intercept and the first two or not.
+Then we repeat this process $M$ times and average.
+
+```{r}
+probModel <- function(M, ns, p){
+  # Initialize arrays
+  trueAIC <- rep(0, length(ns))
+  trueBIC <- rep(0, length(ns))
+  
+  for (i in 1:length(ns)){
+    n <- ns[i]
+    for (j in 1:M){
+      data <- genData(n, p)
+      
+      # Build the full formula, take in account the p < n case
+      fString <- "y ~ "
+      for (k in 1:min(p-1, n-3)){
+        fString <- paste(fString, "x.", k, " + ", sep = "")
+      }
+      fString <- paste(fString, "x.", min(p, n-2), sep = "")
+      
+      # Limit models
+      modZero <- lm("y ~ 1", data = data)
+      modAll  <- lm(fString, data = data)
+      
+      # Step AIC and step BIC
+      redAIC  <- MASS::stepAIC(modAll, direction = "both", trace = 0, k = 2,
+                               scope = list(lower = modZero, upper = modAll))
+      redBIC  <- MASS::stepAIC(modAll, direction = "both", trace = 0, k = log(n),
+                               scope = list(lower = modZero, upper = modAll))
+      
+      # Add one if correct model
+      predAIC    <- names(redAIC$coefficients)
+      predBIC    <- names(redBIC$coefficients)
+      trueAIC[i] <- trueAIC[i] +
+        1*((length(predAIC) == 3) && (prod(predAIC == c("(Intercept)", "x.1", "x.2")) == 1))
+      trueBIC[i] <- trueBIC[i] +
+        1*((length(predBIC) == 3) && (prod(predBIC == c("(Intercept)", "x.1", "x.2")) == 1))
+    }
+  }
+  
+  # Average and build dataframe
+  trueAIC <- trueAIC/M
+  trueBIC <- trueBIC/M
+  return (data.frame(n = c(ns, ns),
+                        p = c(trueAIC, trueBIC),
+                        method = c(rep("AIC", length(ns)), rep("BIC", length(ns)))
+                        ))
+}
+```
+
+Now we simulate and plot for $M = 100,200,500,1000$.
+
+```{r}
+plotMC <- function(M, ns, p){
+  ggplot(probModel(M, ns, p), aes(x = n, y = p)) +
+    geom_line(aes(color = method))+
+    geom_point(aes(color = method)) +
+    geom_hline(yintercept = 1) +
+    scale_x_continuous(trans = 'log2', breaks = ns) +
+    xlab("Number of samples") +
+    ylab("Probability of selecting the true model") +
+    ggtitle(paste("M =", M))
+}
+```
+
+```{r}
+plotMC(100, 2^c(3:10), 10)
+plotMC(200, 2^c(3:10), 10)
+plotMC(500, 2^c(3:10), 10)
+plotMC(1000, 2^c(3:10), 10)
+```
+
+We can immediately see that for larger datasets, BIC consistenly improves,
+reaching the $0.9$ area for our largest case, with still a positive tendency
+if we were to consider bigger $n$'s.
+On the other hand, AIC lacks this consistency and saturates at around or below
+$0.5$, with no hope for further improvement on bigger datasets.
+
+This aforementioned difference comes from the penalization term for extra
+estimators, which is $\log(n)p$ for BIC and $2p$ for AIC.
+This does also explain why for small number of samples both of them behave
+similarly, as $\log(2^l) = l\log(2) \approx 2$, $l = 3,4$.
+As we further increment the number of points, the penalization from BIC
+exceeds that of AIC, favouring less number of predictors, hence improving
+its chances to predict the true underlying model.
