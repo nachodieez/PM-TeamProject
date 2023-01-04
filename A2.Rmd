@@ -148,9 +148,9 @@ We will create models with polynomials of degree $i$, $i = 1, ..., 10$ and see t
 mat_pred <- data.frame(x = seq_x)
 new_x <- data.frame(temp = seq_x)
 
-df <- data.frame(Degree = 1:10, Deviance = 0, AIC = 0, BIC = 0)
+df <- data.frame(Degree = 1:7, Deviance = 0, AIC = 0, BIC = 0)
 
-for (i in 1:10){
+for (i in 1:7){
   fit_temp <- glm(total_fails ~ poly(temp, degree = i), family = poisson, data = data)
   df$Deviance[i] <- fit_temp$deviance
   df$AIC[i] <- fit_temp$aic
@@ -158,7 +158,7 @@ for (i in 1:10){
   mat_pred <- cbind(mat_pred, predict(fit_temp, new_x, type = "response"))
 }
 
-colnames(mat_pred)[2:11] <- paste0("temp^", 1:10)
+colnames(mat_pred)[2:8] <- paste0("temp^", 1:7)
 ```
 ```{r, echo = F}
 kable(df)
@@ -168,11 +168,11 @@ kable(df)
 ```{r}
 plot(x, y, pch = 16, ylim = c(0,6), ylab = "Total fails",
      xlab = "Temp", main = "Total fails vs temp")
-matlines(x = mat_pred[,1], y = mat_pred[,-c(1,9:11)], 
-      lty = 1, lwd = 2.5, col = 1:10) 
-legend("topright", legend = colnames(mat_pred)[2:11], lty = 1, lwd = 3,
-       col = 1:10, cex = 0.7)
+matlines(x = mat_pred[,1], y = mat_pred[,-1], 
+      lty = 1, lwd = 2.5, col = 1:7) 
+legend("topright", legend = colnames(mat_pred)[2:8], lty = 1, lwd = 3,
+       col = 1:7, cex = 0.7)
 ```
 
-We can see that, as we increase the degree of the polynomial, the deviance decreases and thus the explanation of the number of incidents improves. However, we can also see that the first (and simplest) model offers both the lowest AIC and BIC. We can conclude that, in this case, considering the small sample size and the information at hand, that the best model is probably the simplest one (no polynomials).  
+We can see that, as we increase the degree of the polynomial, the deviance decreases and thus the explanation of the number of incidents improves. However, we can also see that the first (and simplest) model offers both the lowest AIC and BIC. We can conclude that, in this case, considering the small sample size and the information at hand, that the best model is the simplest one (no polynomials), as the more complex ones are more than probably overfitting. 
 
