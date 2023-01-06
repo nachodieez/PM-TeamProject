@@ -162,7 +162,6 @@ v <- fit_pca$sdev^2/sum(fit_pca$sdev^2)
 
 ```{r plot pca}
 
-plot(v)
 cumsum(v)  
   
 c <- cumsum(fit_pca$sdev^2)
@@ -171,7 +170,7 @@ d <- c - m*c(0:(length(c)-1)) + c[1]
 
 plot(d)
 n_pcs <- which.max(d)
-n_pcs <- 12
+n_pcs <- 11
 
 new_x <- as.data.frame(as.matrix(x1_2) %*% fit_pca$rotation[,1:n_pcs])
 
@@ -183,24 +182,65 @@ new_x2 <- fit_pca2$scores[,1:n_pcs]
 fit5 <- glm(y ~ ., family = binomial, data = new_x)
 summary(fit5)
 
+require(car)
+vif(fit5)
+
 modZero <- glm(y ~ 1, family = binomial, data = new_x)
 modAll <- glm(y ~ ., family = binomial, data = new_x)
 
 both <- step(modZero, scope = list(lower = modZero, upper = modAll), direction = "both")
+```
+```{r}
+require(dplyr)
 
-modAll2 <- glm(y ~ ., family = binomial, data = x_categorical)
+y2 <- dplyr::recode(y, A = 0, B = 1)
+
+k <- 1:16
+mse <- c()
+for (i in 0:13){
+  f <- glm(y[-(i*16+k)] ~ ., family = binomial, data = new_x[-(i*16+k),])
+  pred <- predict(f, newdata = new_x[(i*16+k),], type = "response") 
+  mse <- append(mse, mean((y2[i*16+k] - pred)^2))
+  print(table(y2[i*16+k], pred > 0.5))
+}
 
 ```
+
 
 Esto es una prueba (MUY chapucera) para ver dónde carajo hay multicolinealidad:
 
 ```{r}
-for (i in 1:22){
-  print(i)
-  aaa <- new_x[,i]
-  bbb <- new_x[,-i]
-  fff <- lm(aaa ~ ., data = bbb)
-  print(summary(fff)$r.squared)
+donde_esta <- function(x){
+  problematicas <- c()
+  for (i in 1:ncol(x)){
+    aaa <- x[,i]
+    bbb <- x[,-i]
+    fff <- lm(aaa ~ ., data = bbb)
+    if (summary(fff)$r.squared == 1){
+      print(i)
+      problematicas <- append(problematicas, colnames(x)[i])
+    }
+  }
+  
+  return(problematicas)
 }
+```
+
+```{r}
+modAll2_cat <- glm(y ~ ., family = binomial, data = x_categorical)
+
+x_categorical$y <- y
+z <- model.matrix(y ~ ., data = x_categorical) 
+donde_esta(as.data.frame(z))
+
+#con esto queda demostrado que la 10 está completamente determinada por la 9
+a <- glm(fac.10b1 ~ fac.9b1 + fac.9c1 + fac.9d1 + fac.9e1 + fac.9f1, family = binomial, data = as.data.frame(z))
+b <- glm(fac.10c1 ~ fac.9b1 + fac.9c1 + fac.9d1 + fac.9e1 + fac.9f1, family = binomial, data = as.data.frame(z))
+estupido <- "fac.10"
+estupido_idx <- which(colnames(x_categorical) == estupido)
+
+x_categorical <- x_categorical[, -estupido_idx]
+
+modAll_cat2 <- glm(y ~ ., family = binomial, data = x_categorical)
 ```
 
