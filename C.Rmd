@@ -152,12 +152,15 @@ x1_2 <- as.data.frame(x1[, selPreds])
 corrplot(cor(x1_2))
 ```
 
-As there are still correlated features
+As there are still correlated features, we decide to perform a PCA:
 
 ```{r}
 fit_pca <- prcomp(x1_2)
 
 v <- fit_pca$sdev^2/sum(fit_pca$sdev^2) 
+``` 
+
+```{r plot pca}
 
 plot(v)
 cumsum(v)  
@@ -168,9 +171,14 @@ d <- c - m*c(0:(length(c)-1)) + c[1]
 
 plot(d)
 n_pcs <- which.max(d)
-n_pcs <- 11
+n_pcs <- 12
 
 new_x <- as.data.frame(as.matrix(x1_2) %*% fit_pca$rotation[,1:n_pcs])
+
+fit_pca2 <- princomp(x1_2)
+new_x2 <- fit_pca2$scores[,1:n_pcs]
+
+#esto era para verificar que prcomp y princomp daban lo mismo
 
 fit5 <- glm(y ~ ., family = binomial, data = new_x)
 summary(fit5)
@@ -178,12 +186,15 @@ summary(fit5)
 modZero <- glm(y ~ 1, family = binomial, data = new_x)
 modAll <- glm(y ~ ., family = binomial, data = new_x)
 
-both <- step(modZero, scope = list(lower = modZero, upper = modAll),
-             direction = "both")
+both <- step(modZero, scope = list(lower = modZero, upper = modAll), direction = "both")
 
-new_new_x <- cbind(new_x, x_categorical)
 modAll2 <- glm(y ~ ., family = binomial, data = x_categorical)
 
+```
+
+Esto es una prueba (MUY chapucera) para ver dónde carajo hay multicolinealidad:
+
+```{r}
 for (i in 1:22){
   print(i)
   aaa <- new_x[,i]
