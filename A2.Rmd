@@ -1,19 +1,20 @@
 ---
-title: "Exercise A-2"
-author: "Pablo Vidal Fernández"
-date: "`r Sys.Date()`"
-output:
-  pdf_document: default
-  html_document:
-    df_print: paged
+title: "Exercise A.2 for Predictive Modeling"
+author:
+  - Pablo Vidal Fernández	  100483812
+  - José Ignacio Díez Ruiz	100487766
+  - Carlos Roldán Piñero	  100484904
+output: pdf_document
 urlcolor: magenta
+date: "`r Sys.Date()`"
+header-includes:
+  - \renewcommand{\and}{\\}
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+```{r setup general, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
-
-```{r, echo = F}
+```{r packages A, include = FALSE}
 require(tidyverse)
 require(knitr)
 require(kableExtra)
@@ -22,7 +23,9 @@ require(papeR)
 ```
 
 
-**Exercise A.2.** For the [challenger.txt](https://www.youtube.com/watch?v=dQw4w9WgXcQ) dataset, do the following:
+## Exercise A.2
+
+For the [challenger.txt](https://www.youtube.com/watch?v=dQw4w9WgXcQ) dataset, do the following:
 
 a.    Do a Poisson regression of the total number of incidents, *nfails.field* + *nfails.nozzle*, on *temp*.
 Interpret the regression. Are the effects of temp significant with $\alpha = 0.01$?
@@ -30,9 +33,9 @@ Interpret the regression. Are the effects of temp significant with $\alpha = 0.0
 We have to define our dependent variable as the sum of the two indicated variables. Then, we can do the regression:
 
 ```{r}
-data <- read.table("challenger.txt", header = T)
-data$total_fails <- data$nfails.field + data$nfails.nozzle
-fit <- glm(total_fails ~ temp, family = poisson, data = data)
+load("10.RData")
+challenger$total_fails <- challenger$nfails.field + challenger$nfails.nozzle
+fit <- glm(total_fails ~ temp, family = poisson, data = challenger)
 ```
 
 ```{r, echo = F}
@@ -52,13 +55,13 @@ b.    Plot the data and the fitted Poisson regression curve.
 We create of sequence of 100 points evenly distributed between the minimum and the maximum observations of *temp*, and predict the expected number of total fails for each of them.
 
 ```{r}
-x <- data$temp
-y <- data$total_fails
+x <- challenger$temp
+y <- challenger$total_fails
 
 plot(x, y, main = "Total fails vs temp", xlab = "Temp",
      ylab = "Total fails", pch = 16)
 
-pred <- predict(fit, data.frame(temp = seq(min(x), max(x), 
+pred <- predict(fit, data.frame(temp = seq(min(x), max(x),
                    length.out = 100)), type = "response")
 
 lines(seq(min(x), max(x), length.out = 100), pred, col = 2, lwd = 2)
@@ -151,7 +154,7 @@ new_x <- data.frame(temp = seq_x)
 df <- data.frame(Degree = 1:7, Deviance = 0, AIC = 0, BIC = 0)
 
 for (i in 1:7){
-  fit_temp <- glm(total_fails ~ poly(temp, degree = i), family = poisson, data = data)
+  fit_temp <- glm(total_fails ~ poly(temp, degree = i), family = poisson, data = challenger)
   df$Deviance[i] <- fit_temp$deviance
   df$AIC[i] <- fit_temp$aic
   df$BIC[i] <- BIC(fit_temp)
@@ -168,8 +171,8 @@ kable(df)
 ```{r}
 plot(x, y, pch = 16, ylim = c(0,6), ylab = "Total fails",
      xlab = "Temp", main = "Total fails vs temp")
-matlines(x = mat_pred[,1], y = mat_pred[,-1], 
-      lty = 1, lwd = 2.5, col = 1:7) 
+matlines(x = mat_pred[,1], y = mat_pred[,-1],
+      lty = 1, lwd = 2.5, col = 1:7)
 legend("topright", legend = colnames(mat_pred)[2:8], lty = 1, lwd = 3,
        col = 1:7, cex = 0.7)
 ```
