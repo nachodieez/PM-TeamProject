@@ -1,19 +1,20 @@
 ---
-title: "Problem Sets for Predictive Modeling"
+title: "Exercise B.6 for Predictive Modeling"
 author:
   - Pablo Vidal Fernández	  100483812
   - José Ignacio Díez Ruiz	100487766
   - Carlos Roldán Piñero	  100484904
 output: pdf_document
+urlcolor: magenta
 date: "`r Sys.Date()`"
 header-includes:
   - \renewcommand{\and}{\\}
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE,
-        message = FALSE, fig.dim = c(8,4))
-
+```{r setup general, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+```{r packages B, include = FALSE}
 require(MASS)
 require(ggplot2)
 ```
@@ -39,7 +40,7 @@ Finally, the response variable is computed,
 \end{equation}
 with $\vec{\varepsilon}$ a $p$-element vector $\sim \mathcal{N}(0,1)$ of noise.
 
-```{r}
+```{r dataframe func}
 gen_data <- function(n, p) {
   x <- matrix(rnorm(n * p), nrow = n, ncol = p)
   b <- c(1, 1, rep(0, p - 2))
@@ -55,7 +56,7 @@ on the model and record whether it did predict the only non-null predictors
 to be the intercept and the first two or not.
 Then we repeat this process $M$ times and average.
 
-```{r}
+```{r mc func}
 prob_model <- function(m, ns, p) {
   # Initialize arrays
   true_aic <- rep(0, length(ns))
@@ -108,7 +109,7 @@ prob_model <- function(m, ns, p) {
 
 Now we simulate and plot for $M = 100,200,500,1000$.
 
-```{r}
+```{r plt mc func}
 plot_mc <- function(data, m) {
   ggplot(data, aes(x = n, y = p)) +
     geom_line(aes(color = method)) +
@@ -123,21 +124,27 @@ plot_mc <- function(data, m) {
 }
 ```
 
-```{r}
-data100  <- prob_model(100,  2^c(3:10), 10)
-plot_mc(data100)
+```{r calc data}
+## WARNING!!!
+## These are time-consuming computations,
+## hence we provide the result inside the
+## 10.Rdata file
+# data100  <- prob_model(100,  2^c(3:10), 10)
+# data1000 <- prob_model(1000, 2^c(3:14), 10)
+
+load("10.RData")
 ```
 
-```{r}
-data1000 <- prob_model(1000, 2^c(3:14), 10)
-plot_mc(data1000)
+```{r mc plots, fig.dim = c(8, 4)}
+plot_mc(data100,  100)
+plot_mc(data1000, 1000)
 ```
 
 We can immediately see that for larger datasets, BIC consistently improves,
 reaching the $0.9$ area for our largest case, with still a positive tendency
 if we were to consider bigger $n$'s.
 On the other hand, AIC lacks this consistency and saturates at around or below
-$0.5$, with no hope for further improvement on bigger datasets.
+$0.25$, with no hope for further improvement on bigger datasets.
 
 This aforementioned difference comes from the penalization term for extra
 estimators, which is $\log(n)p$ for BIC and $2p$ for AIC.
