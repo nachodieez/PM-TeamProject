@@ -11,7 +11,8 @@ header-includes:
 ---
 
 ```{r setup, include = F}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+        warning = FALSE, fig.dim = c(8, 4))
 require(tidyverse)
 require(pracma)
 require(Matrix)
@@ -20,6 +21,21 @@ require(glmnet)
 require(corrplot)
 require(car)
 require(MASS)
+require(fastDummies)
+require(dplyr)
+
+load("mysterious.RData")
+categorical_idx <- names(which(sapply(df, class) == "factor"))
+factorial_idx   <- categorical_idx[-1]
+numerical_idx   <- setdiff(names(df), categorical_idx)
+
+drop_columns <- function(df, cols) {
+  new_df <- subset(df, select = !(names(df) %in% cols))
+  categorical_idx <<- names(which(sapply(new_df, class) == "factor"))
+  factorial_idx   <<- categorical_idx[-1]
+  numerical_idx   <<- setdiff(names(new_df), categorical_idx)
+  return(new_df)
+}
 ```
 
 ## Introduction
@@ -48,276 +64,234 @@ spanning 26 rows.
 On the next section we will detail our analysis process
 and buildup of the prediction model.
 
+## Model Building
 
-```{r}
-load("mysterious.RData")
+### Preprocessing
 
-dim(df)
+We first start by analysing the distributions of NaNs on
+the various variables:
 
-sum(is.na(df))
-
+```{r nans}
 cols_with_na <- sort(sapply(df, function(x) sum(is.na(x))), decreasing = TRUE)
 cols_with_na[cols_with_na > 0]
 ```
 
 We can see that the 81 missing values are within 4 variables.
+Three of them are categorical.
+Before deciding whether we should impute or not, we want to
+be sure if this variables are important for the prediction.
 
-```{r}
-categorical_idx <- names(which(sapply(df, class) == "factor"))
-factorial_idx   <- categorical_idx[-1]
-numerical_idx   <- setdiff(names(df), categorical_idx)
+For the numerical variable, a simple t-test is enough to determine
+that there is a significant difference between the groups.
+Hence, we will keep it and impute it using the median.
 
-mca_fit <- MCA(X = df[categorical_idx], graph = FALSE)
-plot.MCA(mca_fit, choix = "var", graph.type = "ggplot")
+```{r t test}
+t.test(num.148 ~ y, data = df)
 ```
 
-```{r internal fit discarded fac, echo = F, results = "hide"}
-fit6 <- glm(y ~ fac.6, family = binomial, data = df)
-fit7 <- glm(y ~ fac.7, family = binomial, data = df)
-fit8 <- glm(y ~ fac.8, family = binomial, data = df)
+The categorical variables we are going to look at them
+using a MCA.
+We can see that factors 6, 7 and 8 are not close to the other ones.
+Considering this, the fact that in the univariate fit
+for each of this factors no category has a significative coefficient,
+that factors 6 and 7 have a lot of categories,
+and that we still have other 900 variables we have decided to drop them.
+We will later return to the MCA. [^1]
+
+[^1]: During the whole document, in the codeblocks we will
+refer to numerical variables as `numerical_idx`, factorials
+as `factorials_idx` and factorials together with the
+prediction variable as `categorical_idx`.
+
+```{r full mca}
+full_mca <- MCA(X = df[categorical_idx], graph = FALSE)
+plot.MCA(full_mca, choix = "var", graph.type = "ggplot")
 ```
-```{r t-test num 148}
-t.test(df$num.148[df$y == "A"], df$num.148[df$y == "B"])$p.value
+```{r impute and drop, echo = FALSE}
+df$num.148[is.na(df$num.148)] <- median(df$num.148, na.rm = TRUE)
+df <- drop_columns(df, c("fac.6", "fac.7", "fac.8"))
 ```
 
-We can see that factors 6, 7 and 8 are not close to the other ones. Considering this, the fact that in the univariate fit for each of this factors no category has a significative coefficient, that factors 6 and 7 have a lot of categories, and that we still have other 900 variables we have decided to drop them. 
-
-Regarding the numerical variable, `num.148`, we have seen that there is a significant difference between groups, so we will keep it and impute the median. 
+For the following part we will need two auxiliary functions.
+With the first, we will check whether there is (up to
+float accuracy), perfect multicollinearity between some
+of our variables.
+The second one checks if some column may be considered
+as constant (taking in account some variability for
+the numerical variables).
 
 ```{r preprocessing functions}
-donde_esta <- function(x){
-  if (prod(sapply(x, class) == "factor")){
-    x <- model.matrix(~ . - 1, data = x)
-    x <- as.data.frame(x)
+find_mulcol <- function(x) {
+  # Handle factors
+  if (all(sapply(x, class) == "factor")) {
+    x <- dummy_cols(x, remove_first_dummy = TRUE,
+            remove_selected_columns = TRUE)
   }
+
+  # Fit each column with the rest
   problematicas <- c()
-  for (i in 1:ncol(x)){
-    aaa <- x[,i]
-    bbb <- x[,-i]
-    fff <- lm(aaa ~ ., data = bbb)
-    if (summary(fff)$r.squared > 0.99){
+  for (i in seq_len(ncol(x))) {
+    f <- lm(x[, i] ~ ., data = x[, -i])
+    if (summary(f)$r.squared > 1 - 1e-10) {
       problematicas <- append(problematicas, colnames(x)[i])
-      z <<- fff
     }
   }
-  
+
   return(problematicas)
 }
 
-check_if_constant_column <- function(x){
+check_if_constant_column <- function(x) {
   num <- x[1]
-  c1 <- sum(x == num) > length(x)/2
-  if(class(x) == "numeric"){
-    c2 <- all(near(x, num, tol = 0.001))
-    return (c1 & c2)
-  }
-  else{
+  c1  <- sum(x == num) > length(x) / 2
+  if (class(x) == "numeric") {
+    c2 <- all(near(x, num, tol = 0.001 * mean(x)))
+    return(c1 & c2)
+  } else {
     return(all(x == num))
-  }  
-}
-
-drop_columns <- function(df, cols) {
-  new_df <- subset(df, select = !(names(df) %in% cols))
-  categorical_idx <<- names(which(sapply(new_df, class) == "factor"))
-  factorial_idx   <<- categorical_idx[-1]
-  numerical_idx   <<- setdiff(names(new_df), categorical_idx)
-  return(new_df)
+  }
 }
 ```
 
-```{r preprocessing}
-df <- drop_columns(df, c("fac.6", "fac.7", "fac.8"))
+We now use them to remove problematic predictors.
 
-# fac.9 and fac.10 R^2 == 1 (use donde_esta)
+```{r problematic, warning = FALSE}
+# Problematic categoricals
+find_mulcol(df[factorial_idx])
 df <- drop_columns(df, c("fac.9"))
-
-df$num.148[is.na(df$num.148)] <- median(df$num.148, na.rm = T)
+find_mulcol(df[factorial_idx])
 
 # Drop constant columns
-constant_columns_idx <- which(sapply(df, check_if_constant_column))
+constant_columns_idx <- names(which(sapply(df, check_if_constant_column)))
 df <- drop_columns(df, constant_columns_idx)
-
-y <- df$y
 ```
-Once preprocessing is done, we will do a preliminary Lasso model to try to decrease the number of predictors:
+
+### Dimensionality reduction
+
+We had several ideas on how to approach dimensionality reduction.
+Mainly, we discussed whether to use PCA or Lasso with the
+numerical variables.
+Finally, we settled on Lasso as not only did it prove to
+be more numerically robust on the particularities of the
+dataset, but it also carries information of the prediction
+variable for the variable selection.
 
 ```{r lasso}
-x1 <- scale(df[numerical_idx])
-fit2 <- glmnet(x1, df$y, family = "binomial", alpha = 1)
-plot(fit2)
+y     <- df$y
+y_enc <- dplyr::recode(y, A = 0, B = 1)
+x_num <- df[numerical_idx]
+x_scl <- scale(x_num)
+lasso <- glmnet(x_num, y_enc, family = "binomial", alpha = 1)
+
+plot(lasso, xvar = "lambda", label = TRUE)
 ```
 
-```{r plot_lasso2}
-plot(fit2, xvar = "lambda", label = T)
-```
+There seem to be some important variables as they converge
+slowly to zero when incrementing the value of $\lambda$.
+However, we do not know which is the best value for $\lambda$.
+We will use cross-validation and the rule of $\hat{\lambda}_{k-1SE}$.
+The idea behind it is visually seen in [Figure 4.5](https://bookdown.org/egarpor/PM-UC3M/images/R/lasso-sel.png),
+where it is evidenced that $\hat{\lambda}_{k-1SE}$ consistently
+predicts the true model for large enough datasets.
 
-There seem to be some important variables. However, we don't know which is the best value for lambda. We will use cross-validation and the rule of $\hat{\lambda}_{k-1SE}$.
+Due to cross validation in `glmnet` being random, we perform
+10 7-fold [^2] CV Lasso regressions and use the average
+obtained $\hat{\lambda}_{k-1SE}$.
+
+[^2]: The number 7 is set because it divides the number
+of observations.
 
 ```{r lambda_selection}
 optimal_lambda <- 0.0
 for (i in 1:10) {
-  kcvLasso <- cv.glmnet(x = x1, y = y, family = "binomial", alpha = 1,
-                      type.measure = "deviance")
-  optimal_lambda <- optimal_lambda + kcvLasso$lambda.1se
+  cv_lasso        <- cv.glmnet(x_scl, y_enc, family = "binomial",
+                      alpha = 1, nfolds = 7)
+  optimal_lambda  <- optimal_lambda + cv_lasso$lambda.1se
 }
-optimal_lambda <- optimal_lambda/10
+optimal_lambda    <- optimal_lambda / 10
 
-print(optimal_lambda)
-indMin <- which.min(kcvLasso$cvm)
-plot(kcvLasso)
-abline(h = kcvLasso$cvm[indMin] + c(0, kcvLasso$cvsd[indMin]))
+mod_lasso <- glmnet(x_scl, y_enc, family = "binomial",
+              alpha = 1, lambda = optimal_lambda)
+pred_nums <- predict(mod_lasso, type = "coefficients",
+                      s = optimal_lambda)[-1, ] != 0
+
+x_lasso   <- as.data.frame(x_scl[, pred_nums])
 ```
 
-The best $\lambda$ is `r round(optimal_lambda, 4)`. It has around 50 non-null coefficients. 
+The best $\lambda$ is `r round(optimal_lambda, 4)`.
+It has `r ncol(x_lasso)` non-null coefficients.
 
-```{r}
-modLassoCV <- glmnet(x1, y, family = "binomial", alpha = 1,
-                     lambda = optimal_lambda)
+Note that we have only reduced the number of variables.
+We still need to deal with multicollinearity between
+the selected predictors.
+We will do so using PCA, but first we filter out perfect
+multicollinearity as they will bring numerical inestability
+to the PCA.
+We illustrate with a corrplot that there is still huge
+correlations
 
-selPreds <- predict(modLassoCV, type = "coefficients",
-                    s = optimal_lambda)[-1, ] != 0
-x1_2 <- as.data.frame(x1[, selPreds])
-
-problematic <- donde_esta(x1_2)
+```{r problematic lasso, warning = FALSE}
+problematic <- find_mulcol(x_lasso)
 while (length(problematic) > 0) {
-  x1_2 <- subset(x1_2, select = !(names(x1_2) %in% problematic[1]))
-  problematic <- donde_esta(x1_2)
+  x_lasso <- subset(x_lasso, select = !(names(x_lasso) %in% problematic[1]))
+  problematic <- find_mulcol(x_lasso)
 }
 
-corrplot(cor(x1_2))
+corrplot(cor(x_lasso))
 ```
 
-As there are still correlated features, we decide to perform a PCA:
+We can now safely proceed to the PCA.
 
-```{r}
-fit_pca <- princomp(x1_2)
+```{r pca}
+pca <- princomp(x_lasso)
 
-v <- fit_pca$sdev^2
-v <- v[v/sum(v) > 0.01]
+v <- pca$sdev^2
+v <- v[v / sum(v) > 0.01]
 c <- cumsum(v)
-m <- (tail(c,1) - c[1])/(length(c) - 1)
-d <- c - m*c(0:(length(c)-1)) + c[1]
+m <- (tail(c, 1) - c[1]) / (length(c) - 1)
+d <- c - m * c(0:(length(c) - 1)) + c[1]
 
 plot(d)
-n_pcs <- which.max(d)
-new_x <- as.data.frame(fit_pca$scores[,1:n_pcs])
+n_pcs     <- which.max(d)
+new_x_num <- as.data.frame(pca$scores[, 1:n_pcs])
 ```
 
-```{r}
-mca_fit <- MCA(X = df[factorial_idx], graph = FALSE, ncp = 20)
-v <- mca_fit$eig[,2]
-c <- cumsum(v)
-m <- (tail(c,1) - c[1])/(length(c) - 1)
-d <- c - m*c(0:(length(c)-1)) + c[1]
+```{r mca}
+mca <- MCA(X = df[factorial_idx], graph = FALSE, ncp = 20)
+c <- mca$eig[, 3]
+m <- (tail(c, 1) - c[1]) / (length(c) - 1)
+d <- c - m * c(0:(length(c) - 1)) + c[1]
 
 plot(d)
-n_mcs <- which.max(d)
-new_f <- as.data.frame(mca_fit$ind$coord[,1:n_mcs])
+n_mcs      <- which.max(d)
+new_x_fac <- as.data.frame(mca$ind$coord[, 1:n_mcs])
 ```
 
+```{r step, warning = FALSE}
+final_df  <- cbind(y_enc, new_x_num, new_x_fac)
 
-```{r}
-x_tot <- cbind(new_x, new_f)
-fit5 <- glm(y ~ ., family = binomial, data = x_tot)
-summary(fit5)
+mod_zero  <- glm(y_enc ~ 1, family = binomial, data = final_df)
+mod_all   <- glm(y_enc ~ ., family = binomial, data = final_df)
 
-modZero <- glm(y ~ 1, family = binomial, data = x_tot)
-modAll  <- glm(y ~ ., family = binomial, data = x_tot)
-
-both <- MASS::stepAIC(modZero, scope = list(lower = modZero, upper = modAll),
-                      direction = "both", trace = 0, k = log(nrow(x_tot)))
+both <- MASS::stepAIC(mod_zero, scope = list(lower = mod_zero, upper = mod_all),
+                      direction = "both", trace = 0, k = log(nrow(final_df)))
 ```
 
-```{r}
-modZero <- glm(y ~ 1, family = binomial, data = df[factorial_idx])
-modAll  <- glm(y ~ ., family = binomial, data = df[factorial_idx])
+```{r cv accuracy}
+nfolds   <- 7
 
-bothfac <- MASS::stepAIC(modZero, scope = list(lower = modZero, upper = modAll),
-                      direction = "both", trace = 0, k = log(nrow(df)))
-```
-
-```{r}
-new_x2 <- cbind(new_x, df[factorial_idx])
-
-modZero <- glm(y2[1:175] ~ 1, family = binomial, data = new_x2[1:175,])
-modAll  <- glm(y2[1:175] ~ ., family = binomial, data = new_x2[1:175,])
-
-both <- MASS::stepAIC(modZero, scope = list(lower = modZero, upper = modAll),
-                      direction = "both", trace = 0, k = log(175))
-```
-
-```{r}
-y_num  <- dplyr::recode(y, A = 0, B = 1)
-nfolds <- 7
-
-cross_val <- function(model, y, df, nfolds) {
-  acc <- 0.0
-  df_tot <- cbind(y, df)
-  fold_size <- floor(nrow(df)/nfolds)
+cross_val <- function(model, df, nfolds) {
+  acc       <- 0.0
+  fold_size <- floor(nrow(df) / nfolds)
   for (i in 1:nfolds) {
-    sr  <- (i - 1)*fold_size
-    er  <- i*fold_size
-    f   <- glm(model$formula, family = binomial, data = df_tot[-(sr:er),])
-    p   <- predict(f, newdata = df_tot[sr:er,-1], type = "response")
-    acc <- acc + mean((p > 0.5) == y[sr:er])
+    sr  <- (i - 1) * fold_size
+    er  <- i * fold_size
+    f   <- glm(model$formula, family = binomial, data = df[-(sr:er), ])
+    p   <- predict(f, newdata = df[sr:er, -1], type = "response")
+    acc <- acc + mean((p > 0.5) == df[sr:er, 1])
   }
-  return (acc / nfolds)
+  return(acc / nfolds)
 }
 
-acc <- cross_val(both, y_num, x_tot, nfolds)
+acc <- cross_val(both, final_df, nfolds)
+print(acc)
 ```
-
-```{r}
-require(dplyr)
-
-y2 <- dplyr::recode(y, A = 0, B = 1)
-
-k <- 1:16
-mse <- c()
-for (i in 0:13){
-  f <- glm(y[-(i*16+k)] ~ ., family = binomial, data = new_x[-(i*16+k),])
-  pred <- predict(f, newdata = new_x[(i*16+k),], type = "response") 
-  mse <- append(mse, mean((y2[i*16+k] - pred)^2))
-  print(table(y2[i*16+k], pred > 0.5))
-}
-
-```
-
-
-Esto es una prueba (MUY chapucera) para ver dónde carajo hay multicolinealidad:
-
-```{r}
-donde_esta <- function(x){
-  problematicas <- c()
-  for (i in 1:ncol(x)){
-    aaa <- x[,i]
-    bbb <- x[,-i]
-    fff <- lm(aaa ~ ., data = bbb)
-    if (summary(fff)$r.squared == 1){
-      print(i)
-      problematicas <- append(problematicas, colnames(x)[i])
-    }
-  }
-  
-  return(problematicas)
-}
-```
-
-```{r}
-modAll2_cat <- glm(y ~ ., family = binomial, data = x_categorical)
-
-x_categorical$y <- y
-z <- model.matrix(y ~ ., data = x_categorical) 
-donde_esta(as.data.frame(z))
-
-#con esto queda demostrado que la 10 está completamente determinada por la 9
-a <- glm(fac.10b1 ~ fac.9b1 + fac.9c1 + fac.9d1 + fac.9e1 + fac.9f1, family = binomial, data = as.data.frame(z))
-b <- glm(fac.10c1 ~ fac.9b1 + fac.9c1 + fac.9d1 + fac.9e1 + fac.9f1, family = binomial, data = as.data.frame(z))
-estupido <- "fac.10"
-estupido_idx <- which(colnames(x_categorical) == estupido)
-
-x_categorical <- x_categorical[, -estupido_idx]
-
-modAll_cat2 <- glm(y ~ ., family = binomial, data = x_categorical)
-```
-
