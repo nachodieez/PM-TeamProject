@@ -10,9 +10,10 @@ header-includes:
   - \renewcommand{\and}{\\}
 ---
 
-```{r setup, include = F}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE,
-        warning = FALSE, fig.dim = c(8, 4))
+```{r setup general, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+```{r packages C, include = FALSE}
 require(tidyverse)
 require(pracma)
 require(Matrix)
@@ -23,8 +24,9 @@ require(car)
 require(MASS)
 require(fastDummies)
 require(dplyr)
-
-load("mysterious.RData")
+```
+```{r utils and data, include = FALSE}
+load("10.RData")
 categorical_idx <- names(which(sapply(df, class) == "factor"))
 factorial_idx   <- categorical_idx[-1]
 numerical_idx   <- setdiff(names(df), categorical_idx)
@@ -103,7 +105,7 @@ refer to numerical variables as `numerical_idx`, factorials
 as `factorials_idx` and factorials together with the
 prediction variable as `categorical_idx`.
 
-```{r full mca}
+```{r full mca, fig.dim = c(8, 4)}
 full_mca <- MCA(X = df[categorical_idx], graph = FALSE)
 plot.MCA(full_mca, choix = "var", graph.type = "ggplot")
 ```
@@ -175,7 +177,7 @@ be more numerically robust on the particularities of the
 dataset, but it also carries information of the prediction
 variable for the variable selection.
 
-```{r lasso}
+```{r lasso, fig.dim = c(8, 4)}
 y     <- df$y
 y_enc <- dplyr::recode(y, A = 0, B = 1)
 x_num <- df[numerical_idx]
@@ -256,7 +258,7 @@ to the line which joins the first and last.
 Finally, we pick the number of PCAs which maximizes
 the aforementioned distance.
 
-```{r pca, echo = FALSE}
+```{r pca, echo = FALSE, fig.dim = c(8, 4)}
 pca <- princomp(x_lasso)
 
 var_pca <- pca$sdev^2
@@ -287,7 +289,7 @@ be `r n_pcs`.
 Now we use the exact same approach with the categorical
 variables with a MCA.
 
-```{r mca, echo = FALSE}
+```{r mca, echo = FALSE, fig.dim = c(8, 4)}
 mca <- MCA(X = df[factorial_idx], graph = FALSE, ncp = 20)
 
 cum_mca <- mca$eig[, 3]
