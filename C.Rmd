@@ -249,14 +249,14 @@ We do this by using a geometric procedure.
 Let us detail it in the following paragraph.
 
 First we plot the cummulative variance explained
-by the PCAs.
+by the PCs.
 Note that one could also take the explained variance, not
 the cummulative sum.
 However this makes for a less numerically stable algorithm
-as mononony is not ensured.
+as monotony is not ensured.
 Then, we measure the vertical distance from each of the points
 to the line which joins the first and last.
-Finally, we pick the number of PCAs which maximizes
+Finally, we pick the number of PCs which maximizes
 the aforementioned distance.
 
 ```{r pca, echo = FALSE, fig.dim = c(8, 4)}
@@ -285,7 +285,7 @@ for (i in seq_len(length(cum_pca))) {
 new_x_num <- as.data.frame(pca$scores[, 1:n_pcs])
 ```
 
-In this case, we find the optimal number of PCAs to
+In this case, we find the optimal number of PCs to
 be `r n_pcs`.
 Now we use the exact same approach with the categorical
 variables with a MCA.
@@ -374,3 +374,19 @@ acc <- cross_val(both, final_df, nfolds)
 ```
 
 The reported 7-fold accuracy is `r round(acc, 4)`.
+
+
+## Conclussions
+
+Working with [mysterious.RData](https://github.com/egarpor/handy/blob/master/datasets/mysterious.RData?raw=true) has been a real challenge.
+The number of variables was much higher than the number of instances. This the presence of multicollinearity among the variables has caused numerous problems, as has been shown throughout the report.
+
+Despite the difficulties encountered, and thanks to the use of variable selection and dimensionality reduction techniques, it has been possible to obtain a model that, apparently, has great predictive power, with an estimated accuracy of 0.9435 (obtained through cross validation).
+
+However, the interpretability of the model may have been affected by these techniques since when performing regression on the principal components, the interpretability of a coefficient linked to a principal component depends on the component itself.
+Nevertheless, the principal components may have clear interpretations and, in that case, the model would not only be highly accurate but also easily interpretable, making it a very useful model.
+Unfortunately, it is difficult to determine whether the latter is true in this case, since you we don't know what each of the variables refers to, beyond its value.
+
+## References
+
+García-Portugués, E. (2022). Notes for Predictive Modeling. Version 5.9.10. ISBN 978-84-09-29679-8. Available at https://bookdown.org/egarpor/PM-UC3M/.
