@@ -19,8 +19,6 @@ require(MASS)
 require(ggplot2)
 ```
 
-## Exercise B.6
-
 We are asked to replicate
 [Figure 3.5 from the course notes](https://bookdown.org/egarpor/PM-UC3M/images/R/cv-shao.png)
 but with some modifications: 10 predictors instead of 5, and only considering

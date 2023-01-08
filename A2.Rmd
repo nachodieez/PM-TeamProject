@@ -22,9 +22,6 @@ require(xtable)
 require(papeR)
 ```
 
-
-## Exercise A.2
-
 For the [challenger.txt](https://www.youtube.com/watch?v=dQw4w9WgXcQ) dataset, do the following:
 
 a.    Do a Poisson regression of the total number of incidents, *nfails.field* + *nfails.nozzle*, on *temp*.

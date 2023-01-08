@@ -1,0 +1,685 @@
+---
+title: "Predictive Modeling Exercises"
+author:
+  - Pablo Vidal Fernández	  100483812
+  - José Ignacio Díez Ruiz	100487766
+  - Carlos Roldán Piñero	  100484904
+output: pdf_document
+urlcolor: magenta
+date: "`r Sys.Date()`"
+header-includes:
+  - \renewcommand{\and}{\\}
+---
+
+```{r setup general, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+# Exercise A.2
+
+```{r packages A, include = FALSE}
+require(tidyverse)
+require(knitr)
+require(kableExtra)
+require(xtable)
+require(papeR)
+```
+
+For the [challenger.txt](https://www.youtube.com/watch?v=dQw4w9WgXcQ) dataset, do the following:
+
+a.    Do a Poisson regression of the total number of incidents, *nfails.field* + *nfails.nozzle*, on *temp*.
+Interpret the regression. Are the effects of temp significant with $\alpha = 0.01$?
+
+We have to define our dependent variable as the sum of the two indicated variables. Then, we can do the regression:
+
+```{r}
+load("10.RData")
+challenger$total_fails <- challenger$nfails.field + challenger$nfails.nozzle
+fit <- glm(total_fails ~ temp, family = poisson, data = challenger)
+```
+
+```{r, echo = F}
+kable(prettify(summary(fit)))
+```
+
+
+The interpretations of the coefficients are the following:
+
+-   $e^{\hat{\beta}_0} = e^{2.943} = 18.91$ is the expected number of total fails when *temp* is equal to 0.
+-   $e^{\hat{\beta}_1} = e^{-0.143} = 0.866$ is the the factor by which the expected number of total fails is going to be multiplied when there is an unit change in *temp* (13.4% reduction).
+
+We can see that the effects of *temp* are significant with $\alpha = 0.01$, as the p-value is smaller and thus we can reject the null hypothesis of the coefficient being equal to 0.
+
+b.    Plot the data and the fitted Poisson regression curve.
+
+We create of sequence of 100 points evenly distributed between the minimum and the maximum observations of *temp*, and predict the expected number of total fails for each of them.
+
+```{r}
+x <- challenger$temp
+y <- challenger$total_fails
+
+plot(x, y, main = "Total fails vs temp", xlab = "Temp",
+     ylab = "Total fails", pch = 16)
+
+pred <- predict(fit, data.frame(temp = seq(min(x), max(x),
+                   length.out = 100)), type = "response")
+
+lines(seq(min(x), max(x), length.out = 100), pred, col = 2, lwd = 2)
+```
+
+c.    Predict the expected number of incidents at temperatures -0.6 and 11.67.
+
+The exercise asks for the expected number of incidents, so we will have to specify *type = response*. If we didn't specify it, the default argument *link* would give us $\hat{\eta}$, and we are interested in $e^{\hat{\eta}}$. 
+
+```{r}
+new_x <- data.frame(temp = c(-0.6, 11.67))
+prediction <- predict(fit, new_x, type = "response")
+
+df_pred <- cbind(new_x, prediction)
+```
+```{r, echo = F}
+kable(df_pred, col.names = c("Temp", "Prediction"))
+```
+
+
+
+We feel obligated to mention that the minimum observation for *temp* is 11.7 While the prediction for *temp* = 11.67 could be fine, as it is very close to observed data, we cannot be sure about the prediction for *temp* = -0.6. The model has not been trained on data with observations even near that temperature.
+
+d.    What are the confidence intervals for the expected number of incidents at the previous temperatures? Draw the confidence intervals curves onto the plot of Part a.
+
+As there is no function that gives the confidence intervals, we have to construct them ourselves using the *se.fit* argument of the *predict* function.
+
+```{r}
+predictCIsPoisson <- function(object, newdata, level = 0.95) {
+  pred <- predict(object = object, newdata = newdata, se.fit = TRUE)
+
+  za <- qnorm(p = (1 - level) / 2)
+  lwr <- pred$fit + za * pred$se.fit
+  upr <- pred$fit - za * pred$se.fit
+  
+  fit <- exp(pred$fit)
+  lwr <- exp(lwr)
+  upr <- exp(upr)
+
+  result <- cbind(fit, lwr, upr)
+  colnames(result) <- c("fit", "lwr", "upr")
+  return(result)
+}
+```
+```{r, echo = F}
+kable(predictCIsPoisson(fit, new_x), col.names = c("Fit", "Lower", "Upper"))
+```
+
+
+To draw the confidence interval, we repeat the same plot of part a but computing the confidence interval for each point:
+
+```{r}
+coarse <- c(1, seq(10, 200, by = 10))
+blue <- rgb(0, 0, 1, alpha = 0.75)
+par(mar = c(4, 4, 1, 1) + 0.1, oma = rep(0, 4))
+seq_x <- seq(min(x), max(x), length.out = 200)
+pred <- predictCIsPoisson(fit, data.frame(temp = seq_x))
+plot(x, y, main = "Total fails vs temp", xlab = "Temp",
+     ylab = "Total fails", pch = 16, ylim = c(0, 5))
+lines(seq_x, pred[,1], col = 2, lwd = 3)
+lines(seq_x, pred[,2], col = blue, lwd = 2, lty = 2)
+lines(seq_x, pred[,3], col = blue, lwd = 2, lty = 2)
+points(seq_x[coarse], pred[coarse, 1],
+       col = 2, pch = 16)
+segments(x0 = seq_x[coarse], x1 = seq_x[coarse],
+         y0 = pred[coarse, 2], y1 = pred[coarse, 3])
+legend("topright", legend = c("Fitted regression", "CI for mean"),
+       lwd = 3, col = c(2, blue), cex = 0.7)
+```
+
+e.    What is the probability of having strictly more than five incidents at temperatures -0.6 and 11.67?
+
+We know that $Y|X = x \sim P(e^{\eta})$, so using that we have to calculate either $P(X > 5)$ or $1 - P(X \leq 5)$ using the distribution function **ppois**:
+
+```{r}
+sprintf("The probability of having more than 5 incidents with temp = %s 
+        is %s", new_x$temp[1], round(ppois(5, prediction[1], lower.tail = F), 4))
+sprintf("The probability of having more than 5 incidents with temp = %s 
+        is %s", new_x$temp[2], round(ppois(5, prediction[2], lower.tail = F), 4))
+```
+
+f.    Can you improve the explanation of nfails.field + nfails.nozzle by using a Poisson regression with polynomial effects? Explore and comment on your results.
+
+We will create models with polynomials of degree $i$, $i = 1, ..., 10$ and see their AIC and BIC:
+
+```{r}
+mat_pred <- data.frame(x = seq_x)
+new_x <- data.frame(temp = seq_x)
+
+df <- data.frame(Degree = 1:7, Deviance = 0, AIC = 0, BIC = 0)
+
+for (i in 1:7){
+  fit_temp <- glm(total_fails ~ poly(temp, degree = i), family = poisson, data = challenger)
+  df$Deviance[i] <- fit_temp$deviance
+  df$AIC[i] <- fit_temp$aic
+  df$BIC[i] <- BIC(fit_temp)
+  mat_pred <- cbind(mat_pred, predict(fit_temp, new_x, type = "response"))
+}
+
+colnames(mat_pred)[2:8] <- paste0("temp^", 1:7)
+```
+```{r, echo = F}
+kable(df)
+```
+
+
+```{r}
+plot(x, y, pch = 16, ylim = c(0,6), ylab = "Total fails",
+     xlab = "Temp", main = "Total fails vs temp")
+matlines(x = mat_pred[,1], y = mat_pred[,-1],
+      lty = 1, lwd = 2.5, col = 1:7)
+legend("topright", legend = colnames(mat_pred)[2:8], lty = 1, lwd = 3,
+       col = 1:7, cex = 0.7)
+```
+
+We can see that, as we increase the degree of the polynomial, the deviance decreases and thus the explanation of the number of incidents improves. However, we can also see that the first (and simplest) model offers both the lowest AIC and BIC. We can conclude that, in this case, considering the small sample size and the information at hand, that the best model is the simplest one (no polynomials), as the more complex ones are more than probably overfitting. 
+
+
+# Exercise B.6
+
+```{r packages B, include = FALSE}
+require(MASS)
+require(ggplot2)
+```
+
+We are asked to replicate
+[Figure 3.5 from the course notes](https://bookdown.org/egarpor/PM-UC3M/images/R/cv-shao.png)
+but with some modifications: 10 predictors instead of 5, and only considering
+AIC and BIC, no LOOCV.
+Let us detail the followed steps.
+
+First, we define a function to generate a data frame with our response variable
+and features.
+This are generated as follows.
+$X$ is a $n\times p$ matrix (with $n$ the number of observations) filled with
+normally distributed random numbers $\sim \mathcal{N}(0,1)$.
+Then, $\beta = (\beta_0, \vec{\beta})^T$ a $(p+1)$-element vector with values
+$\beta_0 = 0.5$, $\beta_1 = \beta_2 = 1$, $\beta_{i>2} = 0$.
+Finally, the response variable is computed,
+\begin{equation}
+  Y = X\vec{\beta} + \vec{\varepsilon} + \beta_0 \begin{pmatrix}1\\\vdots\\1\end{pmatrix} \;,
+\end{equation}
+with $\vec{\varepsilon}$ a $p$-element vector $\sim \mathcal{N}(0,1)$ of noise.
+
+```{r dataframe func}
+gen_data <- function(n, p) {
+  x <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  b <- c(1, 1, rep(0, p - 2))
+  e <- rnorm(n)
+  y <- drop(x %*% b) + e + 0.5
+  return(data.frame(y = y, x = x))
+}
+```
+
+Now we define the function for the Monte Carlo estimation of the probability.
+The idea is to generate the data, perform a bidirectional step AIC and BIC
+on the model and record whether it did predict the only non-null predictors
+to be the intercept and the first two or not.
+Then we repeat this process $M$ times and average.
+
+```{r mc func}
+prob_model <- function(m, ns, p) {
+  # Initialize arrays
+  true_aic <- rep(0, length(ns))
+  true_bic <- rep(0, length(ns))
+
+  for (i in seq_len(length(ns))) {
+    n <- ns[i]
+    for (j in 1:m){
+      data <- gen_data(n, p)
+
+      # Build the intermediate formula, take in account the n < p/2 case
+      f_string <- "y ~ "
+      for (k in 1:min(p / 2 - 1, n - 3)) {
+        f_string <- paste(f_string, "x.", k, " + ", sep = "")
+      }
+      f_string <- paste(f_string, "x.", min(p / 2, n - 2), sep = "")
+
+      # Limit models
+      mod_zero  <- lm(y ~ 1, data = data)
+      mod_all   <- lm(y ~ ., data = data)
+      mod_inter <- lm(as.formula(f_string), data = data)
+
+      # Step AIC and step BIC
+      red_aic <- MASS::stepAIC(mod_inter, direction = "both", trace = 0, k = 2,
+                                scope = list(lower = mod_zero, upper = mod_all))
+      red_bic <- MASS::stepAIC(mod_inter, direction = "both",
+                                trace = 0, k = log(n),
+                                scope = list(lower = mod_zero, upper = mod_all))
+
+      # Add one if correct model
+      pred_aic     <- names(red_aic$coefficients)
+      pred_bic     <- names(red_bic$coefficients)
+      target_names <- c("(Intercept)", "x.1", "x.2")
+      true_aic[i] <- true_aic[i] +
+        ((length(pred_aic) == 3) && all(pred_aic == target_names))
+      true_bic[i] <- true_bic[i] +
+        ((length(pred_bic) == 3) && all(pred_bic == target_names))
+    }
+  }
+
+  # Average and build dataframe
+  true_aic <- true_aic / m
+  true_bic <- true_bic / m
+  return(data.frame(n      = c(ns, ns),
+                    p      = c(true_aic, true_bic),
+                    method = c(rep("AIC", length(ns)), rep("BIC", length(ns)))
+                    ))
+}
+```
+
+Now we simulate and plot for $M = 100,200,500,1000$.
+
+```{r plt mc func}
+plot_mc <- function(data, m) {
+  ggplot(data, aes(x = n, y = p)) +
+    geom_line(aes(color = method)) +
+    geom_point(aes(color = method)) +
+    geom_hline(yintercept = 1) +
+    scale_x_continuous(trans = "log2", breaks = data$n) +
+    xlab("Number of samples") +
+    ylab("Probability of selecting the true model") +
+    ggtitle(paste("M =", m)) +
+    theme_bw() +
+    labs(color = "Method")
+}
+```
+
+```{r calc data}
+## WARNING!!!
+## These are time-consuming computations,
+## hence we provide the result inside the
+## 10.Rdata file
+# data100  <- prob_model(100,  2^c(3:10), 10)
+# data1000 <- prob_model(1000, 2^c(3:14), 10)
+
+load("10.RData")
+```
+
+```{r mc plots, fig.dim = c(8, 4)}
+plot_mc(data100,  100)
+plot_mc(data1000, 1000)
+```
+
+We can immediately see that for larger datasets, BIC consistently improves,
+reaching the $0.9$ area for our largest case, with still a positive tendency
+if we were to consider bigger $n$'s.
+On the other hand, AIC lacks this consistency and saturates at around or below
+$0.25$, with no hope for further improvement on bigger datasets.
+
+This aforementioned difference comes from the penalization term for extra
+estimators, which is $\log(n)p$ for BIC and $2p$ for AIC.
+This does also explain why for small number of samples both of them behave
+similarly, as $\log(2^l) = l\log(2) \approx 2$, $l = 3,4$.
+As we further increment the number of points, the penalization from BIC
+exceeds that of AIC, favoring less number of predictors, hence improving
+its chances to predict the true underlying model.
+
+# Exercise C
+
+```{r packages C, include = FALSE}
+require(tidyverse)
+require(pracma)
+require(Matrix)
+require(FactoMineR)
+require(glmnet)
+require(corrplot)
+require(car)
+require(MASS)
+require(fastDummies)
+require(dplyr)
+```
+```{r utils and data, include = FALSE}
+load("10.RData")
+categorical_idx <- names(which(sapply(df, class) == "factor"))
+factorial_idx   <- categorical_idx[-1]
+numerical_idx   <- setdiff(names(df), categorical_idx)
+
+drop_columns <- function(df, cols) {
+  new_df <- subset(df, select = !(names(df) %in% cols))
+  categorical_idx <<- names(which(sapply(new_df, class) == "factor"))
+  factorial_idx   <<- categorical_idx[-1]
+  numerical_idx   <<- setdiff(names(new_df), categorical_idx)
+  return(new_df)
+}
+```
+
+## Introduction
+
+In the search of a dataset of true interest for ourselves, we were
+sadly met with failure.
+After exhaustive indagations in public repositories, we were
+not able to find a suitable one.
+We did, nonetheless, stumbled upon intriguing datasets,
+which, unfortunately, were time series.
+
+As such, and although it was against our primary desire,
+we ended up using the [mysterious.RData](https://github.com/egarpor/handy/blob/master/datasets/mysterious.RData?raw=true).
+This, presented some challenges, which will be explored
+on the next section, which made it certainly more appealing
+than the majority of exploited online datasets.
+
+Let us detail briefly the contents of the selected data.
+It is comprised of one binary prediction variable `y` and
+903 predictors, seggregated by numericals, 893 of them, and
+categoricals, the remaining 10.
+It has 224 observations, which already tells us that we will
+need to consider dimensional reduction techniques.
+It has some NaNs present in it, a total of 81 values
+spanning 26 rows.
+On the next section we will detail our analysis process
+and buildup of the prediction model.
+
+## Model Building
+
+### Preprocessing
+
+We first start by analysing the distributions of NaNs on
+the various variables:
+
+```{r nans}
+cols_with_na <- sort(sapply(df, function(x) sum(is.na(x))), decreasing = TRUE)
+cols_with_na[cols_with_na > 0]
+```
+
+We can see that the 81 missing values are within 4 variables.
+Three of them are categorical.
+Before deciding whether we should impute or not, we want to
+be sure if this variables are important for the prediction.
+
+For the numerical variable, a simple t-test is enough to determine
+that there is a significant difference between the groups.
+Hence, we will keep it and impute it using the median.
+
+```{r t test}
+t.test(num.148 ~ y, data = df)
+```
+
+The categorical variables we are going to look at them
+using a MCA.
+We can see that factors 6, 7 and 8 are not close to the other ones.
+Considering this, the fact that in the univariate fit
+for each of this factors no category has a significative coefficient,
+that factors 6 and 7 have a lot of categories,
+and that we still have other 900 variables we have decided to drop them.
+We will later return to the MCA. [^1]
+
+[^1]: During the whole document, in the codeblocks we will
+refer to numerical variables as `numerical_idx`, factorials
+as `factorials_idx` and factorials together with the
+prediction variable as `categorical_idx`.
+
+```{r full mca, fig.dim = c(8, 4)}
+full_mca <- MCA(X = df[categorical_idx], graph = FALSE)
+plot.MCA(full_mca, choix = "var", graph.type = "ggplot")
+```
+```{r impute and drop, echo = FALSE}
+df$num.148[is.na(df$num.148)] <- median(df$num.148, na.rm = TRUE)
+df <- drop_columns(df, c("fac.6", "fac.7", "fac.8"))
+```
+
+For the following part we will need two auxiliary functions.
+With the first, we will check whether there is (up to
+float accuracy), perfect multicollinearity between some
+of our variables.
+The second one checks if some column may be considered
+as constant (taking in account some variability for
+the numerical variables).
+
+```{r preprocessing functions}
+find_mulcol <- function(x) {
+  # Handle factors
+  if (all(sapply(x, class) == "factor")) {
+    x <- dummy_cols(x, remove_first_dummy = TRUE,
+            remove_selected_columns = TRUE)
+  }
+
+  # Fit each column with the rest
+  problematicas <- c()
+  for (i in seq_len(ncol(x))) {
+    f <- lm(x[, i] ~ ., data = x[, -i])
+    if (summary(f)$r.squared > 1 - 1e-10) {
+      problematicas <- append(problematicas, colnames(x)[i])
+    }
+  }
+
+  return(problematicas)
+}
+
+check_if_constant_column <- function(x) {
+  num <- x[1]
+  c1  <- sum(x == num) > length(x) / 2
+  if (class(x) == "numeric") {
+    c2 <- all(near(x, num, tol = 0.001 * mean(x)))
+    return(c1 & c2)
+  } else {
+    return(all(x == num))
+  }
+}
+```
+
+We now use them to remove problematic predictors.
+
+```{r problematic, warning = FALSE}
+# Problematic categoricals
+find_mulcol(df[factorial_idx])
+df <- drop_columns(df, c("fac.9"))
+find_mulcol(df[factorial_idx])
+
+# Drop constant columns
+constant_columns_idx <- names(which(sapply(df, check_if_constant_column)))
+df <- drop_columns(df, constant_columns_idx)
+```
+
+### Dimensionality reduction
+
+We had several ideas on how to approach dimensionality reduction.
+Mainly, we discussed whether to use PCA or Lasso with the
+numerical variables.
+Finally, we settled on Lasso as not only did it prove to
+be more numerically robust on the particularities of the
+dataset, but it also carries information of the prediction
+variable for the variable selection.
+
+```{r lasso, fig.dim = c(8, 4)}
+y     <- df$y
+y_enc <- dplyr::recode(y, A = 0, B = 1)
+x_num <- df[numerical_idx]
+x_scl <- scale(x_num)
+lasso <- glmnet(x_num, y_enc, family = "binomial", alpha = 1)
+
+plot(lasso, xvar = "lambda", label = TRUE)
+```
+
+There seem to be some important variables as they converge
+slowly to zero when incrementing the value of $\lambda$.
+However, we do not know which is the best value for $\lambda$.
+We will use cross-validation and the rule of $\hat{\lambda}_{k-1SE}$.
+The idea behind it is visually seen in [Figure 4.5](https://bookdown.org/egarpor/PM-UC3M/images/R/lasso-sel.png),
+where it is evidenced that $\hat{\lambda}_{k-1SE}$ consistently
+predicts the true model for large enough datasets.
+
+Due to cross validation in `glmnet` being random, we perform
+10 7-fold [^2] CV Lasso regressions and use the average
+obtained $\hat{\lambda}_{k-1SE}$.
+
+[^2]: The number 7 is set because it divides the number
+of observations.
+
+```{r lambda_selection}
+optimal_lambda <- 0.0
+for (i in 1:10) {
+  cv_lasso        <- cv.glmnet(x_scl, y_enc, family = "binomial",
+                      alpha = 1, nfolds = 7)
+  optimal_lambda  <- optimal_lambda + cv_lasso$lambda.1se
+}
+optimal_lambda    <- optimal_lambda / 10
+
+mod_lasso <- glmnet(x_scl, y_enc, family = "binomial",
+              alpha = 1, lambda = optimal_lambda)
+pred_nums <- predict(mod_lasso, type = "coefficients",
+                      s = optimal_lambda)[-1, ] != 0
+
+x_lasso   <- as.data.frame(x_scl[, pred_nums])
+```
+
+The best $\lambda$ is `r round(optimal_lambda, 4)`.
+It has `r ncol(x_lasso)` non-null coefficients.
+
+Note that we have only reduced the number of variables.
+We still need to deal with multicollinearity between
+the selected predictors.
+We will do so using PCA, but first we filter out perfect
+multicollinearity as they will bring numerical inestability
+to the PCA.
+We illustrate with a corrplot that there is still huge
+correlations
+
+```{r problematic lasso, warning = FALSE, fig.dim = c(16, 16)}
+problematic <- find_mulcol(x_lasso)
+while (length(problematic) > 0) {
+  x_lasso <- subset(x_lasso, select = !(names(x_lasso) %in% problematic[1]))
+  problematic <- find_mulcol(x_lasso)
+}
+
+corrplot(cor(x_lasso))
+```
+
+We can now safely proceed to the PCA.
+The next question that arises is how to select
+the optimal number of principal components.
+We do this by using a geometric procedure.
+Let us detail it in the following paragraph.
+
+First we plot the cummulative variance explained
+by the PCAs.
+Note that one could also take the explained variance, not
+the cummulative sum.
+However this makes for a less numerically stable algorithm
+as mononony is not ensured.
+Then, we measure the vertical distance from each of the points
+to the line which joins the first and last.
+Finally, we pick the number of PCAs which maximizes
+the aforementioned distance.
+
+```{r pca, echo = FALSE, fig.dim = c(8, 4)}
+pca <- princomp(x_lasso)
+
+var_pca <- pca$sdev^2
+var_pca <- var_pca[var_pca / sum(var_pca) > 0.01]
+cum_pca <- cumsum(var_pca)
+slp_pca <- (tail(cum_pca, 1) - cum_pca[1]) / (length(cum_pca) - 1)
+dst_pca <- cum_pca - slp_pca * seq.int(0, length(cum_pca) - 1)
+
+n_pcs <- which.max(dst_pca)
+
+plot(cum_pca, bg = "black")
+lines(cum_pca[1] + slp_pca * seq.int(0, length(cum_pca) - 1), col = "#D81B60")
+for (i in seq_len(length(cum_pca))) {
+  if (i == n_pcs) {
+    lines(c(i, i), c(cum_pca[i], cum_pca[1] + slp_pca * (i - 1)),
+          col = "#FFC107")
+  } else {
+    lines(c(i, i), c(cum_pca[i], cum_pca[1] + slp_pca * (i - 1)),
+          col = "#1E88E5")
+  }
+}
+
+new_x_num <- as.data.frame(pca$scores[, 1:n_pcs])
+```
+
+In this case, we find the optimal number of PCAs to
+be `r n_pcs`.
+Now we use the exact same approach with the categorical
+variables with a MCA.
+
+```{r mca, echo = FALSE, fig.dim = c(8, 4)}
+mca <- MCA(X = df[factorial_idx], graph = FALSE, ncp = 20)
+
+cum_mca <- mca$eig[, 3]
+slp_mca <- (tail(cum_mca, 1) - cum_mca[1]) / (length(cum_mca) - 1)
+dst_mca <- cum_mca - slp_mca * seq.int(0, length(cum_mca) - 1)
+
+n_mcs <- which.max(dst_mca)
+
+plot(cum_mca, bg = "black")
+lines(cum_mca[1] + slp_mca * seq.int(0, length(cum_mca) - 1), col = "#D81B60")
+for (i in seq_len(length(cum_mca))) {
+  if (i == n_mcs) {
+    lines(c(i, i), c(cum_mca[i], cum_mca[1] + slp_mca * (i - 1)),
+          col = "#FFC107")
+  } else {
+    lines(c(i, i), c(cum_mca[i], cum_mca[1] + slp_mca * (i - 1)),
+          col = "#1E88E5")
+  }
+}
+
+new_x_fac <- as.data.frame(mca$ind$coord[, 1:n_mcs])
+```
+
+For them we find `r n_mcs` as the optimal number
+of MCs to consider.
+
+Let us stop here for a moment to appreciate what we have done.
+We came all the way to reduce the number of variables to
+just `r n_pcs + n_mcs`.
+It is at this point that we consider we have reduced
+the dimensionality enough so that we may start to build
+the final model.
+
+### Final Model
+
+To end with, we use a simple step BIC [^3] search to find the
+final model.
+
+[^3]: We refer to our own simulated results on the
+exercise B.6 to prefer the BIC search over AIC search.
+
+```{r step, warning = FALSE}
+# y_enc is the encoded prediction variable
+# new_x_num are the selected PCAs
+# new_x_fac are the selected MCAs
+final_df  <- cbind(y_enc, new_x_num, new_x_fac)
+
+mod_zero  <- glm(y_enc ~ 1, family = binomial, data = final_df)
+mod_all   <- glm(y_enc ~ ., family = binomial, data = final_df)
+
+both <- MASS::stepAIC(mod_zero, scope = list(lower = mod_zero, upper = mod_all),
+                      direction = "both", trace = 0, k = log(nrow(final_df)))
+```
+
+The final model is then:
+```{r final model, echo = FALSE}
+  print(both$formula)
+```
+
+To end the project, we report the accuracy obtained
+in predicting the objective variable using 7-fold
+cross validation.
+
+```{r cv accuracy}
+nfolds   <- 7
+
+cross_val <- function(model, df, nfolds) {
+  acc       <- 0.0
+  fold_size <- floor(nrow(df) / nfolds)
+  for (i in 1:nfolds) {
+    sr  <- (i - 1) * fold_size
+    er  <- i * fold_size
+    f   <- glm(model$formula, family = binomial, data = df[-(sr:er), ])
+    p   <- predict(f, newdata = df[sr:er, -1], type = "response")
+    acc <- acc + mean((p > 0.5) == df[sr:er, 1])
+  }
+  return(acc / nfolds)
+}
+
+acc <- cross_val(both, final_df, nfolds)
+```
+
+The reported 7-fold accuracy is `r round(acc, 4)`.
