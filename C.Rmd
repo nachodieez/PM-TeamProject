@@ -5,6 +5,7 @@ author:
   - José Ignacio Díez Ruiz	100487766
   - Carlos Roldán Piñero	  100484904
 output: pdf_document
+urlcolor: magenta
 date: "`r Sys.Date()`"
 header-includes:
   - \renewcommand{\and}{\\}
