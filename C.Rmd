@@ -229,7 +229,7 @@ to the PCA.
 We illustrate with a corrplot that there is still huge
 correlations
 
-```{r problematic lasso, warning = FALSE}
+```{r problematic lasso, warning = FALSE, fig.dim = c(16, 16)}
 problematic <- find_mulcol(x_lasso)
 while (length(problematic) > 0) {
   x_lasso <- subset(x_lasso, select = !(names(x_lasso) %in% problematic[1]))
@@ -240,33 +240,99 @@ corrplot(cor(x_lasso))
 ```
 
 We can now safely proceed to the PCA.
+The next question that arises is how to select
+the optimal number of principal components.
+We do this by using a geometric procedure.
+Let us detail it in the following paragraph.
 
-```{r pca}
+First we plot the cummulative variance explained
+by the PCAs.
+Note that one could also take the explained variance, not
+the cummulative sum.
+However this makes for a less numerically stable algorithm
+as mononony is not ensured.
+Then, we measure the vertical distance from each of the points
+to the line which joins the first and last.
+Finally, we pick the number of PCAs which maximizes
+the aforementioned distance.
+
+```{r pca, echo = FALSE}
 pca <- princomp(x_lasso)
 
-v <- pca$sdev^2
-v <- v[v / sum(v) > 0.01]
-c <- cumsum(v)
-m <- (tail(c, 1) - c[1]) / (length(c) - 1)
-d <- c - m * c(0:(length(c) - 1)) + c[1]
+var_pca <- pca$sdev^2
+var_pca <- var_pca[var_pca / sum(var_pca) > 0.01]
+cum_pca <- cumsum(var_pca)
+slp_pca <- (tail(cum_pca, 1) - cum_pca[1]) / (length(cum_pca) - 1)
+dst_pca <- cum_pca - slp_pca * seq.int(0, length(cum_pca) - 1)
 
-plot(d)
-n_pcs     <- which.max(d)
+n_pcs <- which.max(dst_pca)
+
+plot(cum_pca, bg = "black")
+lines(cum_pca[1] + slp_pca * seq.int(0, length(cum_pca) - 1), col = "#D81B60")
+for (i in seq_len(length(cum_pca))) {
+  if (i == n_pcs) {
+    lines(c(i, i), c(cum_pca[i], cum_pca[1] + slp_pca * (i - 1)),
+          col = "#FFC107")
+  } else {
+    lines(c(i, i), c(cum_pca[i], cum_pca[1] + slp_pca * (i - 1)),
+          col = "#1E88E5")
+  }
+}
+
 new_x_num <- as.data.frame(pca$scores[, 1:n_pcs])
 ```
 
-```{r mca}
-mca <- MCA(X = df[factorial_idx], graph = FALSE, ncp = 20)
-c <- mca$eig[, 3]
-m <- (tail(c, 1) - c[1]) / (length(c) - 1)
-d <- c - m * c(0:(length(c) - 1)) + c[1]
+In this case, we find the optimal number of PCAs to
+be `r n_pcs`.
+Now we use the exact same approach with the categorical
+variables with a MCA.
 
-plot(d)
-n_mcs      <- which.max(d)
+```{r mca, echo = FALSE}
+mca <- MCA(X = df[factorial_idx], graph = FALSE, ncp = 20)
+
+cum_mca <- mca$eig[, 3]
+slp_mca <- (tail(cum_mca, 1) - cum_mca[1]) / (length(cum_mca) - 1)
+dst_mca <- cum_mca - slp_mca * seq.int(0, length(cum_mca) - 1)
+
+n_mcs <- which.max(dst_mca)
+
+plot(cum_mca, bg = "black")
+lines(cum_mca[1] + slp_mca * seq.int(0, length(cum_mca) - 1), col = "#D81B60")
+for (i in seq_len(length(cum_mca))) {
+  if (i == n_mcs) {
+    lines(c(i, i), c(cum_mca[i], cum_mca[1] + slp_mca * (i - 1)),
+          col = "#FFC107")
+  } else {
+    lines(c(i, i), c(cum_mca[i], cum_mca[1] + slp_mca * (i - 1)),
+          col = "#1E88E5")
+  }
+}
+
 new_x_fac <- as.data.frame(mca$ind$coord[, 1:n_mcs])
 ```
 
+For them we find `r n_mcs` as the optimal number
+of MCs to consider.
+
+Let us stop here for a moment to appreciate what we have done.
+We came all the way to reduce the number of variables to
+just `r n_pcs + n_mcs`.
+It is at this point that we consider we have reduced
+the dimensionality enough so that we may start to build
+the final model.
+
+### Final Model
+
+To end with, we use a simple step BIC [^3] search to find the
+final model.
+
+[^3]: We refer to our own simulated results on the
+exercise B.6 to prefer the BIC search over AIC search.
+
 ```{r step, warning = FALSE}
+# y_enc is the encoded prediction variable
+# new_x_num are the selected PCAs
+# new_x_fac are the selected MCAs
 final_df  <- cbind(y_enc, new_x_num, new_x_fac)
 
 mod_zero  <- glm(y_enc ~ 1, family = binomial, data = final_df)
@@ -275,6 +341,15 @@ mod_all   <- glm(y_enc ~ ., family = binomial, data = final_df)
 both <- MASS::stepAIC(mod_zero, scope = list(lower = mod_zero, upper = mod_all),
                       direction = "both", trace = 0, k = log(nrow(final_df)))
 ```
+
+The final model is then:
+```{r final model, echo = FALSE}
+  print(both$formula)
+```
+
+To end the project, we report the accuracy obtained
+in predicting the objective variable using 7-fold
+cross validation.
 
 ```{r cv accuracy}
 nfolds   <- 7
@@ -293,5 +368,6 @@ cross_val <- function(model, df, nfolds) {
 }
 
 acc <- cross_val(both, final_df, nfolds)
-print(acc)
 ```
+
+The reported 7-fold accuracy is `r round(acc, 4)`.
