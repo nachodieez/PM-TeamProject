@@ -11,7 +11,8 @@ header-includes:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, fig.dim = c(8,4))
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,
+        message = FALSE, fig.dim = c(8,4))
 
 require(MASS)
 require(ggplot2)
@@ -39,12 +40,12 @@ Finally, the response variable is computed,
 with $\vec{\varepsilon}$ a $p$-element vector $\sim \mathcal{N}(0,1)$ of noise.
 
 ```{r}
-genData <- function(n, p){
-  X <- matrix(rnorm(n*p), nrow = n, ncol = p)
-  B <- c(1, 1, rep(0, p-2))
-  E <- rnorm(n)
-  Y <- drop(X %*% B) + E + 0.5
-  return(data.frame(y = Y, x = X))
+gen_data <- function(n, p) {
+  x <- matrix(rnorm(n * p), nrow = n, ncol = p)
+  b <- c(1, 1, rep(0, p - 2))
+  e <- rnorm(n)
+  y <- drop(x %*% b) + e + 0.5
+  return(data.frame(y = y, x = x))
 }
 ```
 
@@ -55,80 +56,81 @@ to be the intercept and the first two or not.
 Then we repeat this process $M$ times and average.
 
 ```{r}
-probModel <- function(M, ns, p){
+prob_model <- function(m, ns, p) {
   # Initialize arrays
-  trueAIC <- rep(0, length(ns))
-  trueBIC <- rep(0, length(ns))
-  
-  for (i in 1:length(ns)){
+  true_aic <- rep(0, length(ns))
+  true_bic <- rep(0, length(ns))
+
+  for (i in seq_len(length(ns))) {
     n <- ns[i]
-    for (j in 1:M){
-      data <- genData(n, p)
-      
+    for (j in 1:m){
+      data <- gen_data(n, p)
+
       # Build the intermediate formula, take in account the n < p/2 case
-      fString <- "y ~ "
-      for (k in 1:min(p/2-1, n-3)){
-        fString <- paste(fString, "x.", k, " + ", sep = "")
+      f_string <- "y ~ "
+      for (k in 1:min(p / 2 - 1, n - 3)) {
+        f_string <- paste(f_string, "x.", k, " + ", sep = "")
       }
-      fString <- paste(fString, "x.", min(p/2, n-2), sep = "")
-      
+      f_string <- paste(f_string, "x.", min(p / 2, n - 2), sep = "")
+
       # Limit models
-      modZero  <- lm(y ~ 1, data = data)
-      modAll   <- lm(y ~ ., data = data)
-      modInter <- lm(as.formula(fString), data = data)
-      
+      mod_zero  <- lm(y ~ 1, data = data)
+      mod_all   <- lm(y ~ ., data = data)
+      mod_inter <- lm(as.formula(f_string), data = data)
+
       # Step AIC and step BIC
-      redAIC  <- MASS::stepAIC(modInter, direction = "both", trace = 0, k = 2,
-                               scope = list(lower = modZero, upper = modAll))
-      redBIC  <- MASS::stepAIC(modInter, direction = "both", trace = 0, k = log(n),
-                               scope = list(lower = modZero, upper = modAll))
-      
+      red_aic <- MASS::stepAIC(mod_inter, direction = "both", trace = 0, k = 2,
+                                scope = list(lower = mod_zero, upper = mod_all))
+      red_bic <- MASS::stepAIC(mod_inter, direction = "both",
+                                trace = 0, k = log(n),
+                                scope = list(lower = mod_zero, upper = mod_all))
+
       # Add one if correct model
-      predAIC     <- names(redAIC$coefficients)
-      predBIC     <- names(redBIC$coefficients)
-      targetNames <- c("(Intercept)", "x.1", "x.2")
-      trueAIC[i] <- trueAIC[i] +
-        ((length(predAIC) == 3) && all(predAIC == targetNames))
-      trueBIC[i] <- trueBIC[i] +
-        ((length(predBIC) == 3) && all(predBIC == targetNames))
+      pred_aic     <- names(red_aic$coefficients)
+      pred_bic     <- names(red_bic$coefficients)
+      target_names <- c("(Intercept)", "x.1", "x.2")
+      true_aic[i] <- true_aic[i] +
+        ((length(pred_aic) == 3) && all(pred_aic == target_names))
+      true_bic[i] <- true_bic[i] +
+        ((length(pred_bic) == 3) && all(pred_bic == target_names))
     }
   }
-  
+
   # Average and build dataframe
-  trueAIC <- trueAIC/M
-  trueBIC <- trueBIC/M
-  return (data.frame(n      = c(ns, ns),
-                     p      = c(trueAIC, trueBIC),
-                     method = c(rep("AIC", length(ns)), rep("BIC", length(ns)))
-                     ))
+  true_aic <- true_aic / m
+  true_bic <- true_bic / m
+  return(data.frame(n      = c(ns, ns),
+                    p      = c(true_aic, true_bic),
+                    method = c(rep("AIC", length(ns)), rep("BIC", length(ns)))
+                    ))
 }
 ```
 
 Now we simulate and plot for $M = 100,200,500,1000$.
 
 ```{r}
-plotMC <- function(data, M){
+plot_mc <- function(data, m) {
   ggplot(data, aes(x = n, y = p)) +
-    geom_line(aes(color = method))+
+    geom_line(aes(color = method)) +
     geom_point(aes(color = method)) +
     geom_hline(yintercept = 1) +
-    scale_x_continuous(trans = 'log2', breaks = data$n) +
+    scale_x_continuous(trans = "log2", breaks = data$n) +
     xlab("Number of samples") +
     ylab("Probability of selecting the true model") +
-    ggtitle(paste("M =", M)) +
+    ggtitle(paste("M =", m)) +
     theme_bw() +
     labs(color = "Method")
 }
 ```
 
 ```{r}
-data100  <- probModel(100,  2^c(3:10), 10)
-plotMC(data100)
+data100  <- prob_model(100,  2^c(3:10), 10)
+plot_mc(data100)
 ```
 
 ```{r}
-data1000 <- probModel(1000, 2^c(3:12), 10)
-plotMC(data1000)
+data1000 <- prob_model(1000, 2^c(3:14), 10)
+plot_mc(data1000)
 ```
 
 We can immediately see that for larger datasets, BIC consistently improves,
